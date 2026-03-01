@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>CAD-HCAC — Sistema de Cirurgias</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        "primary": "#2563eb",
+        "primary-dark": "#1d4ed8",
+        "primary-light": "#dbeafe",
+        "accent": "#0ea5e9",
+        "deep-blue": "#0f1b2d",
+        "sidebar-bg": "#111d2e",
+        "sidebar-hover": "#1a2d45",
+        "card-bg": "#ffffff",
+        "surface": "#f1f5f9",
+        "danger": "#ef4444",
+        "success": "#22c55e",
+        "warning": "#f59e0b",
+      },
+      fontFamily: {
+        "display": ["'Plus Jakarta Sans'", "sans-serif"]
+      },
+    },
+  },
+}
+</script>
+<style>
+  * { font-family: 'Plus Jakarta Sans', sans-serif; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .filled { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+  /* Animations */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideInLeft { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes scaleIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+  @keyframes pulse-dot { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
+  .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
+  .animate-slideIn { animation: slideInLeft 0.3s ease-out forwards; }
+  .animate-scaleIn { animation: scaleIn 0.3s ease-out forwards; }
+
+  /* Table */
+  .table-container { overflow-x: auto; }
+  .table-container table { min-width: 800px; }
+
+  /* Toggle switch */
+  .toggle-switch { position: relative; width: 44px; height: 24px; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; cursor: pointer; inset: 0; background: #cbd5e1; border-radius: 24px; transition: 0.3s; }
+  .toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s; }
+  .toggle-switch input:checked + .toggle-slider { background: #2563eb; }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+  /* Toast */
+  @keyframes toastIn { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes toastOut { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
+  .toast-enter { animation: toastIn 0.3s ease-out; }
+  .toast-exit { animation: toastOut 0.3s ease-in; }
+
+  /* Modal backdrop */
+  .modal-backdrop { backdrop-filter: blur(4px); }
+
+  /* Sidebar active indicator */
+  .nav-active { position: relative; }
+  .nav-active::before { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 60%; background: #2563eb; border-radius: 0 4px 4px 0; }
+</style>
+</head>
+<body class="bg-surface min-h-screen">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } = React;
+
+// ─── Supabase Client ───
+const SUPABASE_URL = 'https://flfnxfsjhjwyofovmdyi.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_wq-vg0EbtkXtDWRlw9CZXg_UCMcjgnT';
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── Auth Context ───
+const AuthContext = createContext(null);
+
+// ─── Toast Context ───
+const ToastContext = createContext(null);
+
+// ─── Icon Component ───
+function Icon({ name, filled, className = '' }) {
+  return <span className={`material-symbols-outlined ${filled ? 'filled' : ''} ${className}`}>{name}</span>;
+}
+
+// ─── Toast System ───
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = useCallback((message, type = 'success') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3500);
+  }, []);
+
+  const icons = { success: 'check_circle', error: 'error', warning: 'warning', info: 'info' };
+  const colors = {
+    success: 'bg-green-600', error: 'bg-red-600',
+    warning: 'bg-amber-500', info: 'bg-blue-600'
+  };
+
+  return (
+    <ToastContext.Provider value={addToast}>
+      {children}
+      <div className="fixed top-4 right-4 z-[999] flex flex-col gap-2 max-w-sm">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast-enter ${colors[t.type]} text-white px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 text-sm font-medium`}>
+            <Icon name={icons[t.type]} filled className="text-xl flex-shrink-0" />
+            <span>{t.message}</span>
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+function useToast() { return useContext(ToastContext); }
+
+// ─── Login Page ───
+function LoginPage({ onLogin }) {
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    setTimeout(() => {
+      if (user === 'CAD' && pass === 'cad2026') {
+        sessionStorage.setItem('cad_auth', 'true');
+        onLogin();
+      } else {
+        setError('Usuário ou senha inválidos.');
+      }
+      setLoading(false);
+    }, 600);
+  };
+
+  return (
+    <div className="bg-deep-blue flex items-center justify-center min-h-screen p-4">
+      <div className="w-full max-w-md animate-scaleIn">
+        <div className="bg-white rounded-2xl shadow-2xl overflow-hidden p-8 md:p-10">
+          {/* Logo */}
+          <div className="flex flex-col items-center mb-8 text-center">
+            <div className="bg-primary/10 p-4 rounded-full mb-4">
+              <Icon name="medical_services" filled className="text-primary text-5xl" />
+            </div>
+            <h1 className="text-slate-900 text-3xl font-bold tracking-tight mb-1">CAD-HCAC</h1>
+            <p className="text-slate-500 text-sm font-medium leading-relaxed">
+              Cirurgia do Aparelho Digestivo<br/>Hospital Central
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm flex items-center gap-2 animate-fadeIn">
+                <Icon name="error" className="text-lg" />
+                {error}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-slate-700 text-sm font-semibold ml-1" htmlFor="login-user">Usuário</label>
+              <div className="relative">
+                <Icon name="person" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
+                <input id="login-user" type="text" value={user} onChange={e => setUser(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400"
+                  placeholder="Digite seu usuário" autoComplete="off" />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-slate-700 text-sm font-semibold ml-1" htmlFor="login-pass">Senha</label>
+              <div className="relative">
+                <Icon name="lock" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xl" />
+                <input id="login-pass" type={showPass ? 'text' : 'password'} value={pass} onChange={e => setPass(e.target.value)}
+                  className="w-full pl-10 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400"
+                  placeholder="Digite sua senha" />
+                <button type="button" onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
+                  <Icon name={showPass ? 'visibility_off' : 'visibility'} className="text-xl" />
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" disabled={loading}
+              className="w-full bg-primary hover:bg-primary-dark disabled:opacity-70 text-white font-bold py-3.5 rounded-lg shadow-lg shadow-primary/30 transition-all flex items-center justify-center gap-2 mt-2">
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>ENTRAR <Icon name="login" className="text-xl" /></>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-8 pt-5 border-t border-slate-100 flex justify-between items-center">
+            <span className="text-slate-400 text-xs flex items-center gap-1">
+              <Icon name="help" className="text-sm" /> Suporte Técnico
+            </span>
+            <span className="text-slate-300 text-xs">v2.4.0</span>
+          </div>
+        </div>
+
+        <div className="mt-6 text-center">
+          <p className="text-slate-300/50 text-xs">
+            © 2025 Hospital Central. Todos os direitos reservados.<br/>
+            Ambiente Restrito e Monitorado.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sidebar ───
+function Sidebar({ currentPage, onNavigate, onLogout, collapsed, onToggle }) {
+  const navItems = [
+    { id: 'lancamento', icon: 'post_add', label: 'Lançamento' },
+    { id: 'visao', icon: 'table_chart', label: 'Visão Geral' },
+    { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
+    { id: 'gerenciamento', icon: 'settings', label: 'Gerenciamento' },
+  ];
+
+  return (
+    <aside className={`fixed left-0 top-0 h-full bg-sidebar-bg text-white z-50 transition-all duration-300 flex flex-col ${collapsed ? 'w-[68px]' : 'w-60'}`}>
+      {/* Header */}
+      <div className="p-4 flex items-center gap-3 border-b border-white/10 min-h-[68px]">
+        <div className="bg-primary/20 p-1.5 rounded-lg flex-shrink-0">
+          <Icon name="medical_services" filled className="text-primary text-2xl" />
+        </div>
+        {!collapsed && (
+          <div className="animate-fadeIn overflow-hidden">
+            <h2 className="text-base font-bold tracking-tight leading-tight">CAD-HCAC</h2>
+            <p className="text-[10px] text-slate-400 leading-tight">Hospital Central</p>
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 py-4 px-2 space-y-1">
+        {navItems.map(item => {
+          const isActive = currentPage === item.id;
+          return (
+            <button key={item.id} onClick={() => onNavigate(item.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left group relative
+                ${isActive ? 'bg-primary/15 text-white nav-active' : 'text-slate-400 hover:bg-sidebar-hover hover:text-slate-200'}`}>
+              <Icon name={item.icon} filled={isActive} className={`text-xl flex-shrink-0 ${isActive ? 'text-primary' : ''}`} />
+              {!collapsed && <span className="text-sm font-medium truncate">{item.label}</span>}
+              {collapsed && (
+                <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50">
+                  {item.label}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Bottom */}
+      <div className="p-2 border-t border-white/10 space-y-1">
+        <button onClick={onToggle}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-sidebar-hover hover:text-slate-200 transition-all">
+          <Icon name={collapsed ? 'chevron_right' : 'chevron_left'} className="text-xl flex-shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">Recolher</span>}
+        </button>
+        <button onClick={onLogout}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-400 hover:bg-red-500/15 hover:text-red-400 transition-all">
+          <Icon name="logout" className="text-xl flex-shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">Sair</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+// ─── Page Header ───
+function PageHeader({ title, subtitle, icon, children }) {
+  return (
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex items-center gap-3">
+        <div className="bg-primary/10 p-2.5 rounded-xl">
+          <Icon name={icon} filled className="text-primary text-2xl" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">{title}</h1>
+          {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ─── Confirm Modal ───
+function ConfirmModal({ open, title, message, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 modal-backdrop bg-black/40" onClick={onCancel}>
+      <div className="bg-white rounded-xl shadow-2xl p-6 max-w-sm w-full animate-scaleIn" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="bg-red-100 p-2 rounded-full">
+            <Icon name="warning" className="text-red-500 text-2xl" />
+          </div>
+          <h3 className="font-bold text-slate-800 text-lg">{title}</h3>
+        </div>
+        <p className="text-slate-600 text-sm mb-6">{message}</p>
+        <div className="flex justify-end gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
+          <button onClick={onConfirm} className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Data Entry Page (Lançamento) ───
+function LancamentoPage() {
+  const toast = useToast();
+  const [cirurgioes, setCirurgioes] = useState([]);
+  const [tipos, setTipos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    data_atendimento: new Date().toISOString().split('T')[0],
+    prontuario: '',
+    nome_paciente: '',
+    idade: '',
+    tipo_cirurgia_id: '',
+    status_pendente: true,
+    cirurgiao_id: '',
+    cirurgia_realizada: false,
+  });
+
+  useEffect(() => {
+    loadSelects();
+  }, []);
+
+  async function loadSelects() {
+    try {
+      const [cRes, tRes] = await Promise.all([
+        supabase.from('cirurgioes').select('*').eq('ativo', true).order('nome'),
+        supabase.from('tipos_cirurgia').select('*').eq('ativo', true).order('descricao'),
+      ]);
+      if (cRes.data) setCirurgioes(cRes.data);
+      if (tRes.data) setTipos(tRes.data);
+    } catch (err) {
+      toast('Erro ao carregar dados.', 'error');
+    }
+  }
+
+  function handleChange(field, value) {
+    setForm(prev => ({ ...prev, [field]: value }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.prontuario || !form.nome_paciente || !form.idade || !form.tipo_cirurgia_id || !form.cirurgiao_id) {
+      toast('Preencha todos os campos obrigatórios.', 'warning');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('cirurgias').insert([{
+        ...form,
+        idade: parseInt(form.idade),
+      }]);
+      if (error) throw error;
+      toast('Cirurgia registrada com sucesso!', 'success');
+      setForm({
+        data_atendimento: new Date().toISOString().split('T')[0],
+        prontuario: '', nome_paciente: '', idade: '',
+        tipo_cirurgia_id: '', status_pendente: true,
+        cirurgiao_id: '', cirurgia_realizada: false,
+      });
+    } catch (err) {
+      toast('Erro ao salvar: ' + (err.message || 'desconhecido'), 'error');
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="animate-fadeIn">
+      <PageHeader title="Lançamento de Cirurgia" subtitle="Registrar nova solicitação de cirurgia" icon="post_add" />
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-6 md:p-8 max-w-3xl">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Data */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Data de Atendimento</label>
+              <input type="date" value={form.data_atendimento} onChange={e => handleChange('data_atendimento', e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm" />
+            </div>
+            {/* Prontuario */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Prontuário *</label>
+              <input type="text" value={form.prontuario} onChange={e => handleChange('prontuario', e.target.value)} placeholder="Nº do prontuário"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm placeholder:text-slate-400" />
+            </div>
+            {/* Nome */}
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nome do Paciente *</label>
+              <input type="text" value={form.nome_paciente} onChange={e => handleChange('nome_paciente', e.target.value)} placeholder="Nome completo do paciente"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm placeholder:text-slate-400" />
+            </div>
+            {/* Idade */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Idade *</label>
+              <input type="number" min="0" max="150" value={form.idade} onChange={e => handleChange('idade', e.target.value)} placeholder="Idade"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm placeholder:text-slate-400" />
+            </div>
+            {/* Tipo Cirurgia */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Cirurgia a ser Realizada *</label>
+              <select value={form.tipo_cirurgia_id} onChange={e => handleChange('tipo_cirurgia_id', e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm">
+                <option value="">Selecione...</option>
+                {tipos.map(t => <option key={t.id} value={t.id}>{t.descricao}</option>)}
+              </select>
+            </div>
+            {/* Cirurgião */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Cirurgião *</label>
+              <select value={form.cirurgiao_id} onChange={e => handleChange('cirurgiao_id', e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-sm">
+                <option value="">Selecione...</option>
+                {cirurgioes.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </select>
+            </div>
+            {/* Toggles */}
+            <div className="flex items-center gap-8 md:col-span-2 pt-2">
+              <div className="flex items-center gap-3">
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={form.status_pendente} onChange={e => handleChange('status_pendente', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+                <span className="text-sm font-medium text-slate-700">Status Pendente</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={form.cirurgia_realizada} onChange={e => handleChange('cirurgia_realizada', e.target.checked)} />
+                  <span className="toggle-slider"></span>
+                </label>
+                <span className="text-sm font-medium text-slate-700">Cirurgia Realizada</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-3">
+            <button type="submit" disabled={loading}
+              className="bg-primary hover:bg-primary-dark disabled:opacity-60 text-white font-bold px-8 py-3 rounded-lg shadow-md shadow-primary/20 transition-all flex items-center gap-2">
+              {loading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Icon name="save" className="text-xl" />}
+              Salvar Registro
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Overview Page (Visão Geral) ───
+function VisaoPage() {
+  const toast = useToast();
+  const [cirurgias, setCirurgias] = useState([]);
+  const [cirurgioes, setCirurgioes] = useState([]);
+  const [tipos, setTipos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editItem, setEditItem] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
+  const [filters, setFilters] = useState({ esteMes: false, tipo: '', pendente: '', cirurgiao: '', realizada: '' });
+
+  useEffect(() => { loadAll(); }, []);
+
+  async function loadAll() {
+    setLoading(true);
+    try {
+      const [cRes, tRes, sRes] = await Promise.all([
+        supabase.from('cirurgioes').select('*').order('nome'),
+        supabase.from('tipos_cirurgia').select('*').order('descricao'),
+        supabase.from('cirurgias').select('*, cirurgioes(nome), tipos_cirurgia(descricao)').order('data_atendimento', { ascending: false }),
+      ]);
+      if (cRes.data) setCirurgioes(cRes.data);
+      if (tRes.data) setTipos(tRes.data);
+      if (sRes.data) setCirurgias(sRes.data);
+    } catch (err) {
+      toast('Erro ao carregar dados.', 'error');
+    }
+    setLoading(false);
+  }
+
+  const filtered = useMemo(() => {
+    return cirurgias.filter(c => {
+      if (filters.esteMes) {
+        const now = new Date();
+        const d = new Date(c.data_atendimento + 'T00:00:00');
+        if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) return false;
+      }
+      if (filters.tipo && c.tipo_cirurgia_id !== filters.tipo) return false;
+      if (filters.pendente === 'sim' && !c.status_pendente) return false;
+      if (filters.pendente === 'nao' && c.status_pendente) return false;
+      if (filters.cirurgiao && c.cirurgiao_id !== filters.cirurgiao) return false;
+      if (filters.realizada === 'sim' && !c.cirurgia_realizada) return false;
+      if (filters.realizada === 'nao' && c.cirurgia_realizada) return false;
+      return true;
+    });
+  }, [cirurgias, filters]);
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    try {
+      const { error } = await supabase.from('cirurgias').delete().eq('id', deleteId);
+      if (error) throw error;
+      toast('Registro excluído.', 'success');
+      setCirurgias(prev => prev.filter(c => c.id !== deleteId));
+    } catch (err) {
+      toast('Erro ao excluir.', 'error');
+    }
+    setDeleteId(null);
+  }
+
+  async function handleEditSave() {
+    if (!editItem) return;
+    try {
+      const { id, cirurgioes: _c, tipos_cirurgia: _t, created_at, ...data } = editItem;
+      data.idade = parseInt(data.idade);
+      const { error } = await supabase.from('cirurgias').update(data).eq('id', id);
+      if (error) throw error;
+      toast('Registro atualizado!', 'success');
+      setEditItem(null);
+      loadAll();
+    } catch (err) {
+      toast('Erro ao atualizar.', 'error');
+    }
+  }
+
+  function formatDate(d) {
+    if (!d) return '-';
+    const parts = d.split('-');
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+
+  function Badge({ yes, labelYes = 'Sim', labelNo = 'Não' }) {
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${yes ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${yes ? 'bg-green-500' : 'bg-slate-400'}`}></span>
+        {yes ? labelYes : labelNo}
+      </span>
+    );
+  }
+
+  return (
+    <div className="animate-fadeIn">
+      <PageHeader title="Visão Geral" subtitle={`${filtered.length} registro(s) encontrado(s)`} icon="table_chart" />
+
+      {/* Filters */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-4 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Icon name="filter_alt" className="text-slate-400 text-lg" />
+          <span className="text-sm font-semibold text-slate-700">Filtros</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <label className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg cursor-pointer border border-slate-200">
+            <input type="checkbox" checked={filters.esteMes} onChange={e => setFilters(f => ({...f, esteMes: e.target.checked}))}
+              className="rounded border-slate-300 text-primary focus:ring-primary" />
+            <span className="text-xs font-medium text-slate-600">Este mês</span>
+          </label>
+          <select value={filters.tipo} onChange={e => setFilters(f => ({...f, tipo: e.target.value}))}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-primary/20">
+            <option value="">Todos os tipos</option>
+            {tipos.map(t => <option key={t.id} value={t.id}>{t.descricao}</option>)}
+          </select>
+          <select value={filters.pendente} onChange={e => setFilters(f => ({...f, pendente: e.target.value}))}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-primary/20">
+            <option value="">Pendente: Todos</option>
+            <option value="sim">Sim</option>
+            <option value="nao">Não</option>
+          </select>
+          <select value={filters.cirurgiao} onChange={e => setFilters(f => ({...f, cirurgiao: e.target.value}))}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-primary/20">
+            <option value="">Todos os cirurgiões</option>
+            {cirurgioes.filter(c=>c.ativo).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+          <select value={filters.realizada} onChange={e => setFilters(f => ({...f, realizada: e.target.value}))}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-primary/20">
+            <option value="">Realizada: Todos</option>
+            <option value="sim">Sim</option>
+            <option value="nao">Não</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <div className="w-8 h-8 border-3 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+            <Icon name="search_off" className="text-5xl mb-2" />
+            <p className="font-medium">Nenhum registro encontrado.</p>
+          </div>
+        ) : (
+          <div className="table-container">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  {['Data','Prontuário','Paciente','Idade','Cirurgia','Pendente','Cirurgião','Realizada','Ações'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map(c => (
+                  <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatDate(c.data_atendimento)}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800">{c.prontuario}</td>
+                    <td className="px-4 py-3 text-slate-700 max-w-[200px] truncate">{c.nome_paciente}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.idade}</td>
+                    <td className="px-4 py-3 text-slate-600">{c.tipos_cirurgia?.descricao || '-'}</td>
+                    <td className="px-4 py-3"><Badge yes={c.status_pendente} /></td>
+                    <td className="px-4 py-3 text-slate-600">{c.cirurgioes?.nome || '-'}</td>
+                    <td className="px-4 py-3"><Badge yes={c.cirurgia_realizada} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditItem({...c})} className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-primary transition-colors">
+                          <Icon name="edit" className="text-lg" />
+                        </button>
+                        <button onClick={() => setDeleteId(c.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors">
+                          <Icon name="delete" className="text-lg" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Delete Confirm */}
+      <ConfirmModal open={!!deleteId} title="Excluir Registro" message="Tem certeza que deseja excluir este registro? Esta ação não pode ser desfeita." onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
+
+      {/* Edit Modal */}
+      {editItem && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 modal-backdrop bg-black/40" onClick={() => setEditItem(null)}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 max-w-lg w-full animate-scaleIn max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-lg text-slate-800 mb-5 flex items-center gap-2">
+              <Icon name="edit" className="text-primary" /> Editar Registro
+            </h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Data</label>
+                  <input type="date" value={editItem.data_atendimento} onChange={e => setEditItem({...editItem, data_atendimento: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Prontuário</label>
+                  <input type="text" value={editItem.prontuario} onChange={e => setEditItem({...editItem, prontuario: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Nome do Paciente</label>
+                <input type="text" value={editItem.nome_paciente} onChange={e => setEditItem({...editItem, nome_paciente: e.target.value})}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Idade</label>
+                  <input type="number" value={editItem.idade} onChange={e => setEditItem({...editItem, idade: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Tipo de Cirurgia</label>
+                  <select value={editItem.tipo_cirurgia_id || ''} onChange={e => setEditItem({...editItem, tipo_cirurgia_id: e.target.value})}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                    <option value="">Selecione...</option>
+                    {tipos.map(t => <option key={t.id} value={t.id}>{t.descricao}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Cirurgião</label>
+                <select value={editItem.cirurgiao_id || ''} onChange={e => setEditItem({...editItem, cirurgiao_id: e.target.value})}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary">
+                  <option value="">Selecione...</option>
+                  {cirurgioes.filter(c=>c.ativo).map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-8">
+                <div className="flex items-center gap-3">
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={editItem.status_pendente} onChange={e => setEditItem({...editItem, status_pendente: e.target.checked})} />
+                    <span className="toggle-slider"></span>
+                  </label>
+                  <span className="text-sm text-slate-700">Pendente</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="toggle-switch">
+                    <input type="checkbox" checked={editItem.cirurgia_realizada} onChange={e => setEditItem({...editItem, cirurgia_realizada: e.target.checked})} />
+                    <span className="toggle-slider"></span>
+                  </label>
+                  <span className="text-sm text-slate-700">Realizada</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-100">
+              <button onClick={() => setEditItem(null)} className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
+              <button onClick={handleEditSave} className="px-5 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-lg transition-colors">Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Dashboard Page ───
+function DashboardPage() {
+  const toast = useToast();
+  const [stats, setStats] = useState({ total: 0, totalMes: 0, realizadas: 0, pendentes: 0 });
+  const [porCirurgiao, setPorCirurgiao] = useState({});
+  const [porTipo, setPorTipo] = useState({});
+  const [evolucao, setEvolucao] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const barRef = useRef(null);
+  const pieRef = useRef(null);
+  const lineRef = useRef(null);
+  const chartInstances = useRef({});
+
+  useEffect(() => {
+    loadDashboard();
+    return () => {
+      Object.values(chartInstances.current).forEach(c => c?.destroy());
+    };
+  }, []);
+
+  async function loadDashboard() {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.from('cirurgias').select('*, cirurgioes(nome), tipos_cirurgia(descricao)');
+      if (error) throw error;
+
+      const now = new Date();
+      const thisMonth = data.filter(d => {
+        const dt = new Date(d.data_atendimento + 'T00:00:00');
+        return dt.getMonth() === now.getMonth() && dt.getFullYear() === now.getFullYear();
+      });
+
+      setStats({
+        total: data.length,
+        totalMes: thisMonth.length,
+        realizadas: data.filter(d => d.cirurgia_realizada).length,
+        pendentes: data.filter(d => d.status_pendente).length,
+      });
+
+      // Por cirurgião
+      const byC = {};
+      data.forEach(d => {
+        const name = d.cirurgioes?.nome || 'Sem cirurgião';
+        byC[name] = (byC[name] || 0) + 1;
+      });
+      setPorCirurgiao(byC);
+
+      // Por tipo
+      const byT = {};
+      data.forEach(d => {
+        const name = d.tipos_cirurgia?.descricao || 'Sem tipo';
+        byT[name] = (byT[name] || 0) + 1;
+      });
+      setPorTipo(byT);
+
+      // Evolução mensal (últimos 6 meses)
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const m = d.getMonth();
+        const y = d.getFullYear();
+        const label = d.toLocaleString('pt-BR', { month: 'short', year: '2-digit' });
+        const solicitadas = data.filter(r => {
+          const dt = new Date(r.data_atendimento + 'T00:00:00');
+          return dt.getMonth() === m && dt.getFullYear() === y;
+        }).length;
+        const realizadasM = data.filter(r => {
+          const dt = new Date(r.data_atendimento + 'T00:00:00');
+          return dt.getMonth() === m && dt.getFullYear() === y && r.cirurgia_realizada;
+        }).length;
+        months.push({ label, solicitadas, realizadas: realizadasM });
+      }
+      setEvolucao(months);
+
+      // Build charts after state set
+      setTimeout(() => buildCharts(byC, byT, months), 100);
+    } catch (err) {
+      toast('Erro ao carregar dashboard.', 'error');
+    }
+    setLoading(false);
+  }
+
+  function buildCharts(byC, byT, months) {
+    Object.values(chartInstances.current).forEach(c => c?.destroy());
+
+    const colors = ['#2563eb','#0ea5e9','#8b5cf6','#ec4899','#f59e0b','#22c55e','#ef4444','#6366f1'];
+
+    // Bar - por cirurgião
+    if (barRef.current) {
+      chartInstances.current.bar = new Chart(barRef.current, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(byC),
+          datasets: [{ label: 'Cirurgias', data: Object.values(byC), backgroundColor: colors.slice(0, Object.keys(byC).length), borderRadius: 6, maxBarThickness: 50 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+      });
+    }
+
+    // Pie - por tipo
+    if (pieRef.current) {
+      chartInstances.current.pie = new Chart(pieRef.current, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(byT),
+          datasets: [{ data: Object.values(byT), backgroundColor: colors.slice(0, Object.keys(byT).length), borderWidth: 0, hoverOffset: 6 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '55%', plugins: { legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true, pointStyleWidth: 8, font: { size: 11 } } } } }
+      });
+    }
+
+    // Line - evolução
+    if (lineRef.current) {
+      chartInstances.current.line = new Chart(lineRef.current, {
+        type: 'line',
+        data: {
+          labels: months.map(m => m.label),
+          datasets: [
+            { label: 'Solicitadas', data: months.map(m => m.solicitadas), borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.08)', fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#2563eb' },
+            { label: 'Realizadas', data: months.map(m => m.realizadas), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', fill: true, tension: 0.4, pointRadius: 4, pointBackgroundColor: '#22c55e' }
+          ]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }, plugins: { legend: { labels: { usePointStyle: true, pointStyleWidth: 8, font: { size: 11 } } } } }
+      });
+    }
+  }
+
+  function StatCard({ icon, label, value, sub, color }) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5 flex items-start gap-4">
+        <div className={`${color} p-2.5 rounded-xl`}>
+          <Icon name={icon} filled className="text-2xl" />
+        </div>
+        <div>
+          <p className="text-2xl font-bold text-slate-800">{value}</p>
+          <p className="text-sm text-slate-500 font-medium">{label}</p>
+          {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <div className="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="animate-fadeIn">
+      <PageHeader title="Dashboard" subtitle="Visão analítica das cirurgias" icon="dashboard" />
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <StatCard icon="assignment" label="Total de Cirurgias" value={stats.total} sub={`${stats.totalMes} este mês`} color="bg-blue-50 text-blue-600" />
+        <StatCard icon="check_circle" label="Realizadas" value={stats.realizadas} color="bg-green-50 text-green-600" />
+        <StatCard icon="pending" label="Pendentes" value={stats.pendentes} color="bg-amber-50 text-amber-600" />
+        <StatCard icon="trending_up" label="Taxa Realização" value={stats.total > 0 ? Math.round(stats.realizadas / stats.total * 100) + '%' : '0%'} color="bg-purple-50 text-purple-600" />
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+            <Icon name="bar_chart" className="text-primary text-lg" /> Cirurgias por Cirurgião
+          </h3>
+          <div style={{height: '260px'}}><canvas ref={barRef}></canvas></div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5">
+          <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+            <Icon name="donut_large" className="text-primary text-lg" /> Cirurgias por Tipo
+          </h3>
+          <div style={{height: '260px'}}><canvas ref={pieRef}></canvas></div>
+        </div>
+      </div>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5">
+        <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
+          <Icon name="show_chart" className="text-primary text-lg" /> Evolução Mensal
+        </h3>
+        <div style={{height: '280px'}}><canvas ref={lineRef}></canvas></div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Management Page ───
+function GerenciamentoPage() {
+  const toast = useToast();
+  const [tab, setTab] = useState('cirurgioes');
+  const [cirurgioes, setCirurgioes] = useState([]);
+  const [tipos, setTipos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newName, setNewName] = useState('');
+  const [editId, setEditId] = useState(null);
+  const [editValue, setEditValue] = useState('');
+
+  useEffect(() => { loadData(); }, []);
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const [cRes, tRes] = await Promise.all([
+        supabase.from('cirurgioes').select('*').order('nome'),
+        supabase.from('tipos_cirurgia').select('*').order('descricao'),
+      ]);
+      if (cRes.data) setCirurgioes(cRes.data);
+      if (tRes.data) setTipos(tRes.data);
+    } catch (err) {
+      toast('Erro ao carregar dados.', 'error');
+    }
+    setLoading(false);
+  }
+
+  async function handleAdd() {
+    if (!newName.trim()) { toast('Preencha o nome/descrição.', 'warning'); return; }
+    const table = tab === 'cirurgioes' ? 'cirurgioes' : 'tipos_cirurgia';
+    const field = tab === 'cirurgioes' ? 'nome' : 'descricao';
+    try {
+      const { error } = await supabase.from(table).insert([{ [field]: newName.trim() }]);
+      if (error) throw error;
+      toast(`${tab === 'cirurgioes' ? 'Cirurgião' : 'Tipo'} adicionado!`, 'success');
+      setNewName('');
+      loadData();
+    } catch (err) {
+      toast('Erro ao adicionar.', 'error');
+    }
+  }
+
+  async function handleToggleAtivo(item) {
+    const table = tab === 'cirurgioes' ? 'cirurgioes' : 'tipos_cirurgia';
+    try {
+      const { error } = await supabase.from(table).update({ ativo: !item.ativo }).eq('id', item.id);
+      if (error) throw error;
+      toast(`Status atualizado.`, 'success');
+      loadData();
+    } catch (err) {
+      toast('Erro ao atualizar status.', 'error');
+    }
+  }
+
+  async function handleEditSave(id) {
+    if (!editValue.trim()) return;
+    const table = tab === 'cirurgioes' ? 'cirurgioes' : 'tipos_cirurgia';
+    const field = tab === 'cirurgioes' ? 'nome' : 'descricao';
+    try {
+      const { error } = await supabase.from(table).update({ [field]: editValue.trim() }).eq('id', id);
+      if (error) throw error;
+      toast('Atualizado!', 'success');
+      setEditId(null);
+      setEditValue('');
+      loadData();
+    } catch (err) {
+      toast('Erro ao editar.', 'error');
+    }
+  }
+
+  const items = tab === 'cirurgioes' ? cirurgioes : tipos;
+  const displayField = tab === 'cirurgioes' ? 'nome' : 'descricao';
+
+  return (
+    <div className="animate-fadeIn">
+      <PageHeader title="Gerenciamento" subtitle="Cadastros do sistema" icon="settings" />
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit mb-6">
+        <button onClick={() => { setTab('cirurgioes'); setEditId(null); setNewName(''); }}
+          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'cirurgioes' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <span className="flex items-center gap-1.5"><Icon name="person" className="text-lg" /> Cirurgiões</span>
+        </button>
+        <button onClick={() => { setTab('tipos'); setEditId(null); setNewName(''); }}
+          className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'tipos' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+          <span className="flex items-center gap-1.5"><Icon name="healing" className="text-lg" /> Tipos de Cirurgia</span>
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-6 max-w-2xl">
+        {/* Add form */}
+        <div className="flex gap-3 mb-6">
+          <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
+            placeholder={tab === 'cirurgioes' ? 'Nome do cirurgião' : 'Descrição do tipo de cirurgia'}
+            onKeyDown={e => e.key === 'Enter' && handleAdd()}
+            className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary placeholder:text-slate-400" />
+          <button onClick={handleAdd}
+            className="bg-primary hover:bg-primary-dark text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-1.5 shadow-sm">
+            <Icon name="add" className="text-lg" /> Adicionar
+          </button>
+        </div>
+
+        {/* List */}
+        {loading ? (
+          <div className="flex justify-center py-8"><div className="w-7 h-7 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div></div>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-8">Nenhum item cadastrado.</p>
+        ) : (
+          <div className="space-y-2">
+            {items.map(item => (
+              <div key={item.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${item.ativo ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'}`}>
+                {editId === item.id ? (
+                  <div className="flex-1 flex items-center gap-2">
+                    <input type="text" value={editValue} onChange={e => setEditValue(e.target.value)} autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') handleEditSave(item.id); if (e.key === 'Escape') setEditId(null); }}
+                      className="flex-1 px-3 py-1.5 bg-slate-50 border border-primary/30 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20" />
+                    <button onClick={() => handleEditSave(item.id)} className="p-1.5 rounded-lg hover:bg-green-50 text-green-600 transition-colors">
+                      <Icon name="check" className="text-lg" />
+                    </button>
+                    <button onClick={() => setEditId(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                      <Icon name="close" className="text-lg" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${item.ativo ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                    <span className="flex-1 text-sm font-medium text-slate-700">{item[displayField]}</span>
+                    <button onClick={() => { setEditId(item.id); setEditValue(item[displayField]); }}
+                      className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-primary transition-colors" title="Editar">
+                      <Icon name="edit" className="text-lg" />
+                    </button>
+                    <button onClick={() => handleToggleAtivo(item)}
+                      className={`p-1.5 rounded-lg transition-colors ${item.ativo ? 'hover:bg-amber-50 text-slate-400 hover:text-amber-500' : 'hover:bg-green-50 text-slate-400 hover:text-green-500'}`}
+                      title={item.ativo ? 'Desativar' : 'Ativar'}>
+                      <Icon name={item.ativo ? 'toggle_on' : 'toggle_off'} className="text-lg" />
+                    </button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ───
+function App() {
+  const [authenticated, setAuthenticated] = useState(() => sessionStorage.getItem('cad_auth') === 'true');
+  const [currentPage, setCurrentPage] = useState('lancamento');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  function handleLogout() {
+    sessionStorage.removeItem('cad_auth');
+    setAuthenticated(false);
+  }
+
+  if (!authenticated) {
+    return (
+      <ToastProvider>
+        <LoginPage onLogin={() => setAuthenticated(true)} />
+      </ToastProvider>
+    );
+  }
+
+  const pages = {
+    lancamento: <LancamentoPage />,
+    visao: <VisaoPage />,
+    dashboard: <DashboardPage />,
+    gerenciamento: <GerenciamentoPage />,
+  };
+
+  return (
+    <ToastProvider>
+      <div className="min-h-screen bg-surface">
+        <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} onLogout={handleLogout}
+          collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} />
+        <main className={`transition-all duration-300 min-h-screen ${sidebarCollapsed ? 'ml-[68px]' : 'ml-60'}`}>
+          {/* Top bar */}
+          <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-40">
+            <div className="px-6 py-3.5 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Icon name="home" className="text-lg text-slate-400" />
+                <span>/</span>
+                <span className="text-slate-700 font-medium capitalize">{currentPage === 'visao' ? 'Visão Geral' : currentPage}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-400 hidden sm:block">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+                  <Icon name="person" filled className="text-primary text-sm" />
+                </div>
+              </div>
+            </div>
+          </header>
+          {/* Content */}
+          <div className="p-6">{pages[currentPage]}</div>
+        </main>
+      </div>
+    </ToastProvider>
+  );
+}
+
+// ─── Mount ───
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
