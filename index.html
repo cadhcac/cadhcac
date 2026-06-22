@@ -7,7 +7,7 @@
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -86,7 +86,7 @@ tailwind.config = {
 <body class="bg-surface min-h-screen">
 <div id="root"></div>
 
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useCallback, useMemo, createContext, useContext } = React;
 
 // ─── Supabase Client ───
@@ -378,12 +378,10 @@ function LancamentoPage() {
   function handleChange(field, value) {
     setForm(prev => {
       const updated = { ...prev, [field]: value };
-      // Auto: se marcar como realizada, desativar pendente
       if (field === 'cirurgia_realizada' && value === true) {
         updated.status_pendente = false;
         updated.motivo_pendente = '';
       }
-      // Limpar motivo se desativar pendente
       if (field === 'status_pendente' && value === false) {
         updated.motivo_pendente = '';
       }
@@ -484,7 +482,7 @@ function LancamentoPage() {
                 <span className="text-sm font-medium text-slate-700">Cirurgia Realizada</span>
               </div>
             </div>
-            {/* Motivo Pendente - exibe apenas quando pendente está ativo */}
+            {/* Motivo Pendente */}
             {form.status_pendente && (
               <div className="md:col-span-2 animate-fadeIn">
                 <label className="block text-sm font-semibold text-slate-700 mb-1.5">
@@ -649,7 +647,7 @@ function VisaoPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 border-3 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
@@ -792,7 +790,6 @@ function VisaoPage() {
                   <span className="text-sm text-slate-700">Realizada</span>
                 </div>
               </div>
-              {/* Motivo pendente no modal de edição */}
               {editItem.status_pendente && (
                 <div className="animate-fadeIn">
                   <label className="block text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
@@ -854,7 +851,6 @@ function DashboardPage() {
         pendentes: data.filter(d => d.status_pendente).length,
       });
 
-      // Por cirurgião
       const byC = {};
       data.forEach(d => {
         const name = d.cirurgioes?.nome || 'Sem cirurgião';
@@ -862,7 +858,6 @@ function DashboardPage() {
       });
       setPorCirurgiao(byC);
 
-      // Por tipo
       const byT = {};
       data.forEach(d => {
         const name = d.tipos_cirurgia?.descricao || 'Sem tipo';
@@ -870,7 +865,6 @@ function DashboardPage() {
       });
       setPorTipo(byT);
 
-      // Evolução mensal (últimos 6 meses)
       const months = [];
       for (let i = 5; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -889,7 +883,6 @@ function DashboardPage() {
       }
       setEvolucao(months);
 
-      // Build charts after state set
       setTimeout(() => buildCharts(byC, byT, months), 100);
     } catch (err) {
       toast('Erro ao carregar dashboard.', 'error');
@@ -902,7 +895,6 @@ function DashboardPage() {
 
     const colors = ['#2563eb','#0ea5e9','#8b5cf6','#ec4899','#f59e0b','#22c55e','#ef4444','#6366f1'];
 
-    // Bar - por cirurgião
     if (barRef.current) {
       chartInstances.current.bar = new Chart(barRef.current, {
         type: 'bar',
@@ -914,7 +906,6 @@ function DashboardPage() {
       });
     }
 
-    // Pie - por tipo
     if (pieRef.current) {
       chartInstances.current.pie = new Chart(pieRef.current, {
         type: 'doughnut',
@@ -926,7 +917,6 @@ function DashboardPage() {
       });
     }
 
-    // Line - evolução
     if (lineRef.current) {
       chartInstances.current.line = new Chart(lineRef.current, {
         type: 'line',
@@ -960,7 +950,7 @@ function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <div className="w-10 h-10 border-3 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+        <div className="w-10 h-10 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -969,7 +959,6 @@ function DashboardPage() {
     <div className="animate-fadeIn">
       <PageHeader title="Dashboard" subtitle="Visão analítica das cirurgias" icon="dashboard" />
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard icon="assignment" label="Total de Cirurgias" value={stats.total} sub={`${stats.totalMes} este mês`} color="bg-blue-50 text-blue-600" />
         <StatCard icon="check_circle" label="Realizadas" value={stats.realizadas} color="bg-green-50 text-green-600" />
@@ -977,7 +966,6 @@ function DashboardPage() {
         <StatCard icon="trending_up" label="Taxa Realização" value={stats.total > 0 ? Math.round(stats.realizadas / stats.total * 100) + '%' : '0%'} color="bg-purple-50 text-purple-600" />
       </div>
 
-      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-5">
           <h3 className="font-semibold text-slate-800 text-sm mb-4 flex items-center gap-2">
@@ -1080,7 +1068,6 @@ function GerenciamentoPage() {
     <div className="animate-fadeIn">
       <PageHeader title="Gerenciamento" subtitle="Cadastros do sistema" icon="settings" />
 
-      {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit mb-6">
         <button onClick={() => { setTab('cirurgioes'); setEditId(null); setNewName(''); }}
           className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${tab === 'cirurgioes' ? 'bg-white text-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
@@ -1093,7 +1080,6 @@ function GerenciamentoPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-6 max-w-2xl">
-        {/* Add form */}
         <div className="flex gap-3 mb-6">
           <input type="text" value={newName} onChange={e => setNewName(e.target.value)}
             placeholder={tab === 'cirurgioes' ? 'Nome do cirurgião' : 'Descrição do tipo de cirurgia'}
@@ -1105,7 +1091,6 @@ function GerenciamentoPage() {
           </button>
         </div>
 
-        {/* List */}
         {loading ? (
           <div className="flex justify-center py-8"><div className="w-7 h-7 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div></div>
         ) : items.length === 0 ? (
@@ -1182,7 +1167,6 @@ function App() {
         <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} onLogout={handleLogout}
           collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(c => !c)} />
         <main className={`transition-all duration-300 min-h-screen ${sidebarCollapsed ? 'ml-[68px]' : 'ml-60'}`}>
-          {/* Top bar */}
           <header className="bg-white/80 backdrop-blur-md border-b border-slate-200/60 sticky top-0 z-40">
             <div className="px-6 py-3.5 flex items-center justify-between">
               <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -1198,7 +1182,6 @@ function App() {
               </div>
             </div>
           </header>
-          {/* Content */}
           <div className="p-6">{pages[currentPage]}</div>
         </main>
       </div>
