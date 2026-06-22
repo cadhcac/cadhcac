@@ -92,7 +92,7 @@ const { useState, useEffect, useRef, useCallback, useMemo, createContext, useCon
 // ─── Supabase Client ───
 const SUPABASE_URL = 'https://flfnxfsjhjwyofovmdyi.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_wq-vg0EbtkXtDWRlw9CZXg_UCMcjgnT';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ─── Auth Context ───
 const AuthContext = createContext(null);
@@ -365,8 +365,8 @@ function LancamentoPage() {
   async function loadSelects() {
     try {
       const [cRes, tRes] = await Promise.all([
-        supabase.from('cirurgioes').select('*').eq('ativo', true).order('nome'),
-        supabase.from('tipos_cirurgia').select('*').eq('ativo', true).order('descricao'),
+        db.from('cirurgioes').select('*').eq('ativo', true).order('nome'),
+        db.from('tipos_cirurgia').select('*').eq('ativo', true).order('descricao'),
       ]);
       if (cRes.data) setCirurgioes(cRes.data);
       if (tRes.data) setTipos(tRes.data);
@@ -397,7 +397,7 @@ function LancamentoPage() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.from('cirurgias').insert([{
+      const { error } = await db.from('cirurgias').insert([{
         ...form,
         idade: parseInt(form.idade),
       }]);
@@ -529,9 +529,9 @@ function VisaoPage() {
     setLoading(true);
     try {
       const [cRes, tRes, sRes] = await Promise.all([
-        supabase.from('cirurgioes').select('*').order('nome'),
-        supabase.from('tipos_cirurgia').select('*').order('descricao'),
-        supabase.from('cirurgias').select('*, cirurgioes(nome), tipos_cirurgia(descricao)').order('data_atendimento', { ascending: false }),
+        db.from('cirurgioes').select('*').order('nome'),
+        db.from('tipos_cirurgia').select('*').order('descricao'),
+        db.from('cirurgias').select('*, cirurgioes(nome), tipos_cirurgia(descricao)').order('data_atendimento', { ascending: false }),
       ]);
       if (cRes.data) setCirurgioes(cRes.data);
       if (tRes.data) setTipos(tRes.data);
@@ -562,7 +562,7 @@ function VisaoPage() {
   async function handleDelete() {
     if (!deleteId) return;
     try {
-      const { error } = await supabase.from('cirurgias').delete().eq('id', deleteId);
+      const { error } = await db.from('cirurgias').delete().eq('id', deleteId);
       if (error) throw error;
       toast('Registro excluído.', 'success');
       setCirurgias(prev => prev.filter(c => c.id !== deleteId));
@@ -577,7 +577,7 @@ function VisaoPage() {
     try {
       const { id, cirurgioes: _c, tipos_cirurgia: _t, created_at, ...data } = editItem;
       data.idade = parseInt(data.idade);
-      const { error } = await supabase.from('cirurgias').update(data).eq('id', id);
+      const { error } = await db.from('cirurgias').update(data).eq('id', id);
       if (error) throw error;
       toast('Registro atualizado!', 'success');
       setEditItem(null);
@@ -835,7 +835,7 @@ function DashboardPage() {
   async function loadDashboard() {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('cirurgias').select('*, cirurgioes(nome), tipos_cirurgia(descricao)');
+      const { data, error } = await db.from('cirurgias').select('*, cirurgioes(nome), tipos_cirurgia(descricao)');
       if (error) throw error;
 
       const now = new Date();
@@ -1007,8 +1007,8 @@ function GerenciamentoPage() {
     setLoading(true);
     try {
       const [cRes, tRes] = await Promise.all([
-        supabase.from('cirurgioes').select('*').order('nome'),
-        supabase.from('tipos_cirurgia').select('*').order('descricao'),
+        db.from('cirurgioes').select('*').order('nome'),
+        db.from('tipos_cirurgia').select('*').order('descricao'),
       ]);
       if (cRes.data) setCirurgioes(cRes.data);
       if (tRes.data) setTipos(tRes.data);
@@ -1023,7 +1023,7 @@ function GerenciamentoPage() {
     const table = tab === 'cirurgioes' ? 'cirurgioes' : 'tipos_cirurgia';
     const field = tab === 'cirurgioes' ? 'nome' : 'descricao';
     try {
-      const { error } = await supabase.from(table).insert([{ [field]: newName.trim() }]);
+      const { error } = await db.from(table).insert([{ [field]: newName.trim() }]);
       if (error) throw error;
       toast(`${tab === 'cirurgioes' ? 'Cirurgião' : 'Tipo'} adicionado!`, 'success');
       setNewName('');
@@ -1036,7 +1036,7 @@ function GerenciamentoPage() {
   async function handleToggleAtivo(item) {
     const table = tab === 'cirurgioes' ? 'cirurgioes' : 'tipos_cirurgia';
     try {
-      const { error } = await supabase.from(table).update({ ativo: !item.ativo }).eq('id', item.id);
+      const { error } = await db.from(table).update({ ativo: !item.ativo }).eq('id', item.id);
       if (error) throw error;
       toast(`Status atualizado.`, 'success');
       loadData();
@@ -1050,7 +1050,7 @@ function GerenciamentoPage() {
     const table = tab === 'cirurgioes' ? 'cirurgioes' : 'tipos_cirurgia';
     const field = tab === 'cirurgioes' ? 'nome' : 'descricao';
     try {
-      const { error } = await supabase.from(table).update({ [field]: editValue.trim() }).eq('id', id);
+      const { error } = await db.from(table).update({ [field]: editValue.trim() }).eq('id', id);
       if (error) throw error;
       toast('Atualizado!', 'success');
       setEditId(null);
