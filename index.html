@@ -8,7 +8,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -92,7 +92,15 @@ const { useState, useEffect, useRef, useCallback, useMemo, createContext, useCon
 // ─── Supabase Client ───
 const SUPABASE_URL = 'https://flfnxfsjhjwyofovmdyi.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_wq-vg0EbtkXtDWRlw9CZXg_UCMcjgnT';
-const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const _sbLib = window.supabase || window.Supabase;
+if (!_sbLib) console.error('[CAD-HCAC] Biblioteca Supabase nao carregada!');
+const db = _sbLib.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Teste de conectividade na inicializacao
+db.from('cirurgioes').select('count', { count: 'exact', head: true })
+  .then(({ count, error }) => {
+    if (error) console.error('[CAD-HCAC] Erro Supabase:', error.message, '| code:', error.code, '| hint:', error.hint);
+    else console.log('[CAD-HCAC] Supabase OK. Cirurgioes:', count);
+  });
 
 // ─── Auth Context ───
 const AuthContext = createContext(null);
